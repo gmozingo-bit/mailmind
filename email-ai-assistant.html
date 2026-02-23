@@ -337,7 +337,7 @@
           </div>
 
           <label class="setup-label">Azure Client ID</label>
-          <input type="text" id="clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+          <input type="text" id="clientId" value="bc20479b-d2bc-424a-85d3-718656921d45" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
 
           <div style="margin-top: 10px;">
             <label class="setup-label">Redirect URI (this page)</label>
@@ -519,7 +519,7 @@ async function connectOutlook() {
   const state = Math.random().toString(36).slice(2);
 
   const authUrl = `https://login.microsoftonline.com/26ca60d2-eab2-4238-a2f2-99ab35f6b796/oauth2/v2.0/authorize?` +
-    `client_id=${encodeURIComponent(clientId)}` +
+    `client_id=bc20479b-d2bc-424a-85d3-718656921d45` +
     `&response_type=token` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&scope=${encodeURIComponent(scopes)}` +
