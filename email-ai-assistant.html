@@ -596,16 +596,23 @@
           <input type="number" id="blastPax" placeholder="e.g. 4" min="1" max="20" />
         </div>
         <div class="setup-section">
-          <label class="setup-label">Aircraft Category Needed</label>
-          <select id="blastAircraftCat">
-            <option value="">Any / All categories</option>
-            <option value="Light Jet">Light Jet</option>
-            <option value="Very Light Jet">Very Light Jet</option>
-            <option value="Midsize Jet">Midsize Jet</option>
-            <option value="Super-Midsize Jet">Super-Midsize Jet</option>
-            <option value="Large Cabin Jet">Large Cabin Jet</option>
-            <option value="Turboprop">Turboprop</option>
-          </select>
+          <label class="setup-label">Aircraft Category Needed (select all that apply)</label>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Very Light Jet" style="width:auto;accent-color:var(--warn);"> Very Light Jet</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Light Jet" style="width:auto;accent-color:var(--warn);"> Light Jet</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Midsize Jet" style="width:auto;accent-color:var(--warn);"> Midsize Jet</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Super-Midsize Jet" style="width:auto;accent-color:var(--warn);"> Super-Midsize Jet</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Large Cabin Jet" style="width:auto;accent-color:var(--warn);"> Large Cabin Jet</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Turboprop" style="width:auto;accent-color:var(--warn);"> Turboprop</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
+              <input type="checkbox" class="aircraft-cat-cb" value="Open to all categories" style="width:auto;accent-color:var(--warn);"> Open / Any Category</label>
+          </div>
         </div>
         <div class="setup-section">
           <label class="setup-label">One-Way or Round Trip</label>
@@ -680,7 +687,7 @@
       <div class="pane-header"><div class="pane-title">📨 Outreach Draft</div></div>
       <div class="pane-body">
 
-        <div id="blastThinking" style="display:none;" class="ai-thinking">
+        <div id="blastThinking" style="display:none !important;" class="ai-thinking">
           <div class="thinking-dots"><span></span><span></span><span></span></div>
           <span style="font-size:11px;color:var(--accent);">Drafting your outreach email...</span>
         </div>
@@ -1253,6 +1260,8 @@ async function processScreenshot(file) {
 
   document.getElementById('extractThinking').style.display = 'flex';
   document.getElementById('opList').innerHTML = '';
+  const existingPanel = document.getElementById('unmatchedPanel');
+  if (existingPanel) existingPanel.remove();
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1304,6 +1313,8 @@ function fuzzyMatch(name, query) {
 function matchAndSelectOperators(names) {
   blastSelected.clear();
   const matchedIndices = [];
+  const unmatched = [];
+
   names.forEach(name => {
     let bestScore = 0, bestIdx = -1;
     OPERATORS.forEach((op, i) => {
@@ -1313,90 +1324,95 @@ function matchAndSelectOperators(names) {
     if (bestScore >= 60 && bestIdx >= 0) {
       blastSelected.add(bestIdx);
       matchedIndices.push(bestIdx);
+    } else {
+      unmatched.push(name);
     }
   });
+
   visibleOperators = matchedIndices.length > 0 ? matchedIndices : OPERATORS.map((_, i) => i);
   renderOpList(visibleOperators);
-  showToast(`Matched ${blastSelected.size} operators from your master list`, 'success');
+
+  // Show missing operators below the list
+  const existing = document.getElementById('unmatchedPanel');
+  if (existing) existing.remove();
+
+  if (unmatched.length > 0) {
+    const panel = document.createElement('div');
+    panel.id = 'unmatchedPanel';
+    panel.style.cssText = 'margin-top:16px;padding:12px;background:rgba(255,79,79,0.08);border:1px solid rgba(255,79,79,0.3);border-radius:8px;';
+    panel.innerHTML = `
+      <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--danger);margin-bottom:8px;">
+        ⚠ ${unmatched.length} operator${unmatched.length > 1 ? 's' : ''} not found in master list
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.8;">
+        ${unmatched.map(n => `<div style="display:flex;align-items:center;gap:6px;"><span style="color:var(--danger);">✕</span> ${escHtml(n)}</div>`).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,79,79,0.2);">
+        These operators were in your screenshot but have no email in your master list. Consider adding them to your CSV.
+      </div>`;
+    document.getElementById('opListPane').appendChild(panel);
+  }
+
+  showToast(`Matched ${blastSelected.size} of ${names.length} operators`, blastSelected.size < names.length ? '' : 'success');
 }
 
 // ─────────────────────────────────────────────
 // Build Blast Draft
 // ─────────────────────────────────────────────
 async function buildBlastDraft() {
-  const apiKey = document.getElementById('anthropicKey').value.trim();
-  if (!apiKey) { showToast('Please enter your Anthropic API key.', 'error'); return; }
   if (blastSelected.size === 0) { showToast('Please select at least one operator.', 'error'); return; }
 
   const from = document.getElementById('blastFrom').value.trim();
   const to = document.getElementById('blastTo').value.trim();
   const date = document.getElementById('blastDate').value.trim();
   const pax = document.getElementById('blastPax').value.trim();
-  const cat = document.getElementById('blastAircraftCat').value;
   const tripType = document.getElementById('blastTripType').value;
   const notes = document.getElementById('blastNotes').value.trim();
 
+  // Get selected aircraft categories
+  const cats = [...document.querySelectorAll('.aircraft-cat-cb:checked')].map(cb => cb.value);
+  const catText = cats.length > 0 ? cats.join(', ') : 'Open to all categories';
+
   if (!from || !to || !date) { showToast('Please fill in departure, arrival, and date.', 'error'); return; }
 
-  document.getElementById('blastThinking').style.display = 'flex';
-  document.getElementById('blastDraftOutput').style.display = 'none';
+  const tripLabel = tripType === 'round-trip' ? 'Round-Trip' : 'One-Way';
+
+  const signature = `Garrett Mozingo
+Owner & Founder
+VALLEY JET
+P: 480.658.6129
+E: gmozingo@valleyjet.com
+W: Valleyjet.com`;
+
+  const emailBody = `Charter team,
+
+We have a flight request from one of our clients and would appreciate your quote:
+
+• Trip Type: ${tripLabel}
+• Departure: ${from}
+• Arrival: ${to}
+• Date: ${date}
+• Passengers: ${pax || 'TBD'}
+• Aircraft Category: ${catText}${notes ? '\n• Additional Notes: ' + notes : ''}
+
+Thank you,
+
+${signature}`;
+
+  const subject = `Flight Request – ${from} to ${to} | ${date}`;
+
+  // Populate BCC
+  const selectedOps = [...blastSelected].map(i => OPERATORS[i]);
+  const bccEmails = selectedOps.map(o => o.email.trim()).filter(Boolean);
+  const bccBox = document.getElementById('blastBccBox');
+  bccBox.innerHTML = selectedOps.map(o => `<span class="bcc-tag">${escHtml(o.name)}</span>`).join('');
+  document.getElementById('blastBccCount').textContent = `${bccEmails.length} operators • emails hidden from each other`;
+
+  document.getElementById('blastSubject').value = subject;
+  document.getElementById('blastBody').value = emailBody;
+  document.getElementById('blastDraftOutput').style.display = 'block';
   document.getElementById('blastDraftEmpty').style.display = 'none';
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        system: `You are an assistant for Valley Jet, a private jet charter broker. Draft a professional, concise flight request email to send to aircraft operators asking for availability and pricing. Respond with ONLY a JSON object: {"subject": "...", "body": "..."}`,
-        messages: [{
-          role: 'user',
-          content: `Write a flight request email to operators with these details:
-Trip type: ${tripType}
-Departure: ${from}
-Arrival: ${to}
-Date: ${date}
-Passengers: ${pax || 'TBD'}
-Aircraft category needed: ${cat || 'Open to all categories'}
-Additional notes: ${notes || 'None'}
-
-The email should:
-- Be professional but concise
-- Ask for aircraft availability, tail number, and all-in pricing
-- Request a timely response
-- Be signed from Valley Jet charter team
-- NOT mention any specific operator name (it goes to multiple operators via BCC)`
-        }]
-      })
-    });
-    const data = await response.json();
-    let text = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
-    const draft = JSON.parse(text);
-
-    // Populate BCC
-    const selectedOps = [...blastSelected].map(i => OPERATORS[i]);
-    const bccEmails = selectedOps.map(o => o.email.trim()).filter(Boolean);
-    const bccBox = document.getElementById('blastBccBox');
-    bccBox.innerHTML = selectedOps.map(o => `<span class="bcc-tag">${escHtml(o.name)}</span>`).join('');
-    document.getElementById('blastBccCount').textContent = `${bccEmails.length} operators • emails hidden from each other`;
-
-    document.getElementById('blastSubject').value = draft.subject || '';
-    document.getElementById('blastBody').value = draft.body || '';
-    document.getElementById('blastDraftOutput').style.display = 'block';
-    showToast('Outreach email ready!', 'success');
-  } catch(e) {
-    console.error(e);
-    showToast('Draft failed: ' + e.message, 'error');
-    document.getElementById('blastDraftEmpty').style.display = 'flex';
-  } finally {
-    document.getElementById('blastThinking').style.display = 'none';
-  }
+  showToast('Outreach email ready!', 'success');
 }
 
 // ─────────────────────────────────────────────
