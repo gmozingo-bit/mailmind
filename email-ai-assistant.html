@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MailMind — AI Email Assistant</title>
-<script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
 
@@ -329,8 +329,9 @@
               <div class="step-title">Azure App Registration</div>
               <div class="step-desc">
                 Create a free app at <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps" target="_blank">portal.azure.com</a>.
-                Set redirect URI to <code style="color:var(--accent2)">[this page URL]</code>.
-                Add <strong>Mail.Read</strong> + <strong>Mail.Send</strong> permissions under "Microsoft Graph → Delegated".
+                Under <strong>Authentication → Add a platform → Single-page application</strong>, add your redirect URI.
+                Enable <strong>Access tokens</strong> and <strong>ID tokens</strong> checkboxes under implicit grant.
+                Add <strong>Mail.Read</strong> + <strong>Mail.Send</strong> under API Permissions → Microsoft Graph → Delegated.
               </div>
             </div>
           </div>
@@ -499,55 +500,67 @@
 
 <script>
 // ─────────────────────────────────────────────
-// State
+// Auth — plain OAuth2 popup (no MSAL needed)
 // ─────────────────────────────────────────────
-let msalInstance = null;
 let accessToken = null;
+let tokenExpiry = null;
 let emails = [];
 let selectedEmails = new Set();
 
-// ─────────────────────────────────────────────
-// MSAL / Outlook
-// ─────────────────────────────────────────────
-function getMsalConfig() {
-  const clientId = document.getElementById('clientId').value.trim();
-  const redirectUri = document.getElementById('redirectUri').value.trim() || window.location.href;
-  return {
-    auth: { clientId, redirectUri, authority: 'https://login.microsoftonline.com/common' },
-    cache: { cacheLocation: 'sessionStorage' }
-  };
-}
+function getClientId() { return document.getElementById('clientId').value.trim(); }
+function getRedirectUri() { return document.getElementById('redirectUri').value.trim() || window.location.href.split('?')[0].split('#')[0]; }
 
 async function connectOutlook() {
-  const clientId = document.getElementById('clientId').value.trim();
+  const clientId = getClientId();
   if (!clientId) { showToast('Please enter your Azure Client ID first.', 'error'); return; }
-  try {
-    const MsalLib = window.msalBrowser || window.msal;
-    msalInstance = new MsalLib.PublicClientApplication(getMsalConfig());
-    const result = await msalInstance.loginPopup({
-      scopes: ['Mail.Read', 'Mail.Send', 'User.Read']
-    });
-    accessToken = result.accessToken;
-    setOutlookConnected(result.account.username);
-    showToast('Connected to Outlook!', 'success');
-  } catch (e) {
-    console.error(e);
-    showToast('Login failed: ' + (e.message || 'unknown error'), 'error');
-  }
-}
 
-function setOutlookConnected(email) {
-  const s = document.getElementById('outlookStatus');
-  s.className = 'status-pill connected';
-  s.innerHTML = `<span class="dot"></span>${email || 'Connected'}`;
-  document.getElementById('connectBtn').style.display = 'none';
-  document.getElementById('signOutBtn').style.display = 'block';
-  document.getElementById('fetchBtn').disabled = false;
+  const redirectUri = getRedirectUri();
+  const scopes = 'openid profile email Mail.Read Mail.Send User.Read';
+  const state = Math.random().toString(36).slice(2);
+
+  const authUrl = `https://login.microsoftonline.com/26ca60d2-eab2-4238-a2f2-99ab35f6b796/oauth2/v2.0/authorize?` +
+    `client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=token` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(scopes)}` +
+    `&state=${state}` +
+    `&response_mode=fragment`;
+
+  const popup = window.open(authUrl, 'mslogin', 'width=520,height=640,left=200,top=100');
+  if (!popup) { showToast('Popup blocked! Please allow popups for this site.', 'error'); return; }
+
+  // Poll popup for token in URL hash
+  const poll = setInterval(() => {
+    try {
+      if (popup.closed) {
+        clearInterval(poll);
+        showToast('Login cancelled.', 'error');
+        return;
+      }
+      const url = popup.location.href;
+      if (url && url.includes('access_token=')) {
+        clearInterval(poll);
+        popup.close();
+        const hash = url.split('#')[1] || url.split('?')[1] || '';
+        const params = new URLSearchParams(hash);
+        accessToken = params.get('access_token');
+        const expiresIn = parseInt(params.get('expires_in') || '3600');
+        tokenExpiry = Date.now() + expiresIn * 1000;
+
+        // Get user info
+        fetch('https://graph.microsoft.com/v1.0/me', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }).then(r => r.json()).then(u => {
+          setOutlookConnected(u.mail || u.userPrincipalName || 'Connected');
+          showToast('Connected to Outlook!', 'success');
+        });
+      }
+    } catch(e) { /* cross-origin, keep polling */ }
+  }, 500);
 }
 
 function signOut() {
-  if (msalInstance) msalInstance.logoutPopup().catch(() => {});
-  accessToken = null; emails = []; selectedEmails.clear();
+  accessToken = null; tokenExpiry = null; emails = []; selectedEmails.clear();
   const s = document.getElementById('outlookStatus');
   s.className = 'status-pill';
   s.innerHTML = '<span class="dot"></span>Outlook disconnected';
@@ -560,18 +573,20 @@ function signOut() {
 }
 
 async function refreshToken() {
-  try {
-    const accounts = msalInstance.getAllAccounts();
-    if (!accounts.length) throw new Error('No accounts');
-    const result = await msalInstance.acquireTokenSilent({
-      scopes: ['Mail.Read', 'Mail.Send'],
-      account: accounts[0]
-    });
-    accessToken = result.accessToken;
-  } catch (e) {
-    const result = await msalInstance.acquireTokenPopup({ scopes: ['Mail.Read', 'Mail.Send'] });
-    accessToken = result.accessToken;
-  }
+  // Token still valid
+  if (accessToken && tokenExpiry && Date.now() < tokenExpiry - 60000) return;
+  // Re-authenticate silently via hidden iframe (implicit flow refresh)
+  showToast('Session refreshing — please sign in again.', '');
+  await connectOutlook();
+}
+
+function setOutlookConnected(email) {
+  const s = document.getElementById('outlookStatus');
+  s.className = 'status-pill connected';
+  s.innerHTML = `<span class="dot"></span>${email || 'Connected'}`;
+  document.getElementById('connectBtn').style.display = 'none';
+  document.getElementById('signOutBtn').style.display = 'block';
+  document.getElementById('fetchBtn').disabled = false;
 }
 
 async function fetchEmails() {
