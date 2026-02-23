@@ -744,59 +744,122 @@ let selectedEmails = new Set();
 let connectedEmail = '';
 
 function getClientId() { return document.getElementById('clientId').value.trim(); }
-function getRedirectUri() { return document.getElementById('redirectUri').value.trim() || window.location.href.split('?')[0].split('#')[0]; }
+
+// PKCE helpers
+async function generatePKCE() {
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  return { verifier, challenge };
+}
+function base64url(buffer) {
+  return btoa(String.fromCharCode(...buffer)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
 
 async function connectOutlook() {
   const clientId = getClientId();
   if (!clientId) { showToast('Please enter your Azure Client ID first.', 'error'); return; }
 
-  const redirectUri = getRedirectUri();
+  const redirectUri = 'https://gmozingo-bit.github.io/mailmind/callback.html';
   const scopes = 'openid profile email Mail.Read Mail.Send User.Read';
-  const state = Math.random().toString(36).slice(2);
+  const state = base64url(crypto.getRandomValues(new Uint8Array(16)));
+  const { verifier, challenge } = await generatePKCE();
+
+  // Store verifier so callback can use it
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_state', state);
 
   const authUrl = `https://login.microsoftonline.com/26ca60d2-eab2-4238-a2f2-99ab35f6b796/oauth2/v2.0/authorize?` +
-    `client_id=bc20479b-d2bc-424a-85d3-718656921d45` +
-    `&response_type=token` +
+    `client_id=${clientId}` +
+    `&response_type=code` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&scope=${encodeURIComponent(scopes)}` +
     `&state=${state}` +
-    `&response_mode=fragment`;
+    `&code_challenge=${challenge}` +
+    `&code_challenge_method=S256` +
+    `&response_mode=query`;
 
   const popup = window.open(authUrl, 'mslogin', 'width=520,height=640,left=200,top=100');
-  if (!popup) { showToast('Popup blocked! Please allow popups for this site.', 'error'); return; }
+  if (!popup) { showToast('Popup blocked! Please allow popups for this site in Chrome.', 'error'); return; }
 
-  // Poll popup for token in URL hash
-  const poll = setInterval(() => {
-    try {
-      if (popup.closed) {
-        clearInterval(poll);
-        showToast('Login cancelled.', 'error');
-        return;
-      }
-      const url = popup.location.href;
-      if (url && url.includes('access_token=')) {
-        clearInterval(poll);
-        popup.close();
-        const hash = url.split('#')[1] || url.split('?')[1] || '';
-        const params = new URLSearchParams(hash);
-        accessToken = params.get('access_token');
-        const expiresIn = parseInt(params.get('expires_in') || '3600');
-        tokenExpiry = Date.now() + expiresIn * 1000;
+  // Listen for auth code from callback.html via postMessage
+  const handler = async (event) => {
+    if (event.origin !== 'https://gmozingo-bit.github.io') return;
+    window.removeEventListener('message', handler);
 
-        // Get user info
-        fetch('https://graph.microsoft.com/v1.0/me', {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        }).then(r => r.json()).then(u => {
+    if (event.data.type === 'ms_auth_code') {
+      const code = event.data.code;
+      const savedVerifier = sessionStorage.getItem('pkce_verifier');
+      // Exchange code for token
+      try {
+        const tokenRes = await fetch(`https://login.microsoftonline.com/26ca60d2-eab2-4238-a2f2-99ab35f6b796/oauth2/v2.0/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: redirectUri,
+            code_verifier: savedVerifier,
+            scope: scopes
+          })
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.access_token) {
+          accessToken = tokenData.access_token;
+          tokenExpiry = Date.now() + (tokenData.expires_in || 3600) * 1000;
+          sessionStorage.setItem('refresh_token', tokenData.refresh_token || '');
+          const meRes = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          const u = await meRes.json();
           setOutlookConnected(u.mail || u.userPrincipalName || 'Connected');
           showToast('Connected to Outlook!', 'success');
-        });
+        } else {
+          showToast('Token error: ' + (tokenData.error_description || tokenData.error), 'error');
+        }
+      } catch(e) {
+        showToast('Auth failed: ' + e.message, 'error');
       }
-    } catch(e) { /* cross-origin, keep polling */ }
-  }, 500);
+    } else if (event.data.type === 'ms_auth_error') {
+      showToast('Login failed: ' + event.data.error, 'error');
+    }
+  };
+  window.addEventListener('message', handler);
+
+  const check = setInterval(() => {
+    if (popup.closed) { clearInterval(check); window.removeEventListener('message', handler); }
+  }, 1000);
+}
+
+async function refreshToken() {
+  if (accessToken && tokenExpiry && Date.now() < tokenExpiry - 60000) return;
+  const refreshTok = sessionStorage.getItem('refresh_token');
+  if (!refreshTok) { await connectOutlook(); return; }
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/26ca60d2-eab2-4238-a2f2-99ab35f6b796/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: getClientId(),
+        grant_type: 'refresh_token',
+        refresh_token: refreshTok,
+        scope: 'Mail.Read Mail.Send User.Read'
+      })
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      accessToken = data.access_token;
+      tokenExpiry = Date.now() + (data.expires_in || 3600) * 1000;
+      if (data.refresh_token) sessionStorage.setItem('refresh_token', data.refresh_token);
+    } else {
+      await connectOutlook();
+    }
+  } catch(e) { await connectOutlook(); }
 }
 
 function signOut() {
   accessToken = null; tokenExpiry = null; emails = []; selectedEmails.clear();
+  sessionStorage.removeItem('refresh_token');
   const s = document.getElementById('outlookStatus');
   s.className = 'status-pill';
   s.innerHTML = '<span class="dot"></span>Outlook disconnected';
@@ -806,14 +869,6 @@ function signOut() {
   document.getElementById('emailList').innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Connect your Outlook account<br/>and fetch emails to get started</div></div>`;
   document.getElementById('emailCount').textContent = '';
   document.getElementById('selBar').style.display = 'none';
-}
-
-async function refreshToken() {
-  // Token still valid
-  if (accessToken && tokenExpiry && Date.now() < tokenExpiry - 60000) return;
-  // Re-authenticate silently via hidden iframe (implicit flow refresh)
-  showToast('Session refreshing — please sign in again.', '');
-  await connectOutlook();
 }
 
 function setOutlookConnected(email) {
