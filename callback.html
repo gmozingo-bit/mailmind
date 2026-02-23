@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><title>Authenticating...</title></head>
+<body>
+<script>
+  // Parse the hash fragment for the token
+  const hash = window.location.hash.substring(1);
+  const params = new URLSearchParams(hash);
+  const token = params.get('access_token');
+  const error = params.get('error');
+
+  if (token) {
+    // Send token back to the opener (main app window)
+    if (window.opener) {
+      window.opener.postMessage({ type: 'ms_auth_token', token }, 'https://gmozingo-bit.github.io');
+    }
+  } else if (error) {
+    if (window.opener) {
+      window.opener.postMessage({ type: 'ms_auth_error', error }, 'https://gmozingo-bit.github.io');
+    }
+  }
+  // Close the popup
+  window.close();
+</script>
+<p style="font-family:sans-serif;text-align:center;margin-top:40px;color:#888;">Authenticating... this window will close automatically.</p>
+</body>
+</html>
