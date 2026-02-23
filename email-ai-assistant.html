@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MailMind — AI Email Assistant</title>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
 
@@ -522,7 +522,8 @@ async function connectOutlook() {
   const clientId = document.getElementById('clientId').value.trim();
   if (!clientId) { showToast('Please enter your Azure Client ID first.', 'error'); return; }
   try {
-    msalInstance = new msal.PublicClientApplication(getMsalConfig());
+    const MsalLib = window.msalBrowser || window.msal;
+    msalInstance = new MsalLib.PublicClientApplication(getMsalConfig());
     const result = await msalInstance.loginPopup({
       scopes: ['Mail.Read', 'Mail.Send', 'User.Read']
     });
