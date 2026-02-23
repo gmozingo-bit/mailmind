@@ -588,8 +588,19 @@
           <input type="text" id="blastTo" placeholder="e.g. LAX, VNY, BUR" />
         </div>
         <div class="setup-section">
-          <label class="setup-label">Date</label>
-          <input type="text" id="blastDate" placeholder="e.g. March 15, 2026" />
+          <label class="setup-label">One-Way or Round Trip</label>
+          <select id="blastTripType" onchange="toggleReturnDate()">
+            <option value="one-way">One-Way</option>
+            <option value="round-trip">Round-Trip</option>
+          </select>
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">Departure Date & Time</label>
+          <input type="datetime-local" id="blastDate" />
+        </div>
+        <div class="setup-section" id="returnDateSection" style="display:none;">
+          <label class="setup-label">Return Date & Time</label>
+          <input type="datetime-local" id="blastReturnDate" />
         </div>
         <div class="setup-section">
           <label class="setup-label">Passengers</label>
@@ -613,13 +624,6 @@
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text);">
               <input type="checkbox" class="aircraft-cat-cb" value="Open to all categories" style="width:auto;accent-color:var(--warn);"> Open / Any Category</label>
           </div>
-        </div>
-        <div class="setup-section">
-          <label class="setup-label">One-Way or Round Trip</label>
-          <select id="blastTripType">
-            <option value="one-way">One-Way</option>
-            <option value="round-trip">Round-Trip</option>
-          </select>
         </div>
         <div class="setup-section">
           <label class="setup-label">Additional Notes (optional)</label>
@@ -1178,8 +1182,16 @@ function showToast(msg, type='') {
 
 // Pre-fill redirect URI
 window.addEventListener('load', () => {
-  document.getElementById('redirectUri').value = window.location.href.split('?')[0];
   renderAllOperators();
+  // Pre-fill departure datetime to tomorrow at 10am
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(10, 0, 0, 0);
+  const fmt = d => d.toISOString().slice(0,16);
+  document.getElementById('blastDate').value = fmt(tomorrow);
+  const returnDay = new Date(tomorrow);
+  returnDay.setDate(returnDay.getDate() + 3);
+  document.getElementById('blastReturnDate').value = fmt(returnDay);
 });
 
 // ─────────────────────────────────────────────
@@ -1414,23 +1426,40 @@ function matchAndSelectOperators(names) {
 // ─────────────────────────────────────────────
 // Build Blast Draft
 // ─────────────────────────────────────────────
+function toggleReturnDate() {
+  const isRound = document.getElementById('blastTripType').value === 'round-trip';
+  document.getElementById('returnDateSection').style.display = isRound ? 'block' : 'none';
+}
+
+function formatDateTime(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  return d.toLocaleString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true
+  });
+}
+
 async function buildBlastDraft() {
   if (blastSelected.size === 0) { showToast('Please select at least one operator.', 'error'); return; }
 
   const from = document.getElementById('blastFrom').value.trim();
   const to = document.getElementById('blastTo').value.trim();
-  const date = document.getElementById('blastDate').value.trim();
+  const dateVal = document.getElementById('blastDate').value;
+  const returnDateVal = document.getElementById('blastReturnDate').value;
   const pax = document.getElementById('blastPax').value.trim();
   const tripType = document.getElementById('blastTripType').value;
   const notes = document.getElementById('blastNotes').value.trim();
 
-  // Get selected aircraft categories
   const cats = [...document.querySelectorAll('.aircraft-cat-cb:checked')].map(cb => cb.value);
   const catText = cats.length > 0 ? cats.join(', ') : 'Open to all categories';
 
-  if (!from || !to || !date) { showToast('Please fill in departure, arrival, and date.', 'error'); return; }
+  if (!from || !to || !dateVal) { showToast('Please fill in departure, arrival, and date.', 'error'); return; }
+  if (tripType === 'round-trip' && !returnDateVal) { showToast('Please enter a return date.', 'error'); return; }
 
   const tripLabel = tripType === 'round-trip' ? 'Round-Trip' : 'One-Way';
+  const dateFormatted = formatDateTime(dateVal);
+  const returnFormatted = returnDateVal ? formatDateTime(returnDateVal) : '';
 
   const signature = `Garrett Mozingo
 Owner & Founder
@@ -1439,6 +1468,10 @@ P: 480.658.6129
 E: gmozingo@valleyjet.com
 W: Valleyjet.com`;
 
+  const dateLines = tripType === 'round-trip'
+    ? `• Departure Date: ${dateFormatted}\n• Return Date: ${returnFormatted}`
+    : `• Date: ${dateFormatted}`;
+
   const emailBody = `Charter team,
 
 We have a flight request from one of our clients and would appreciate your quote:
@@ -1446,7 +1479,7 @@ We have a flight request from one of our clients and would appreciate your quote
 • Trip Type: ${tripLabel}
 • Departure: ${from}
 • Arrival: ${to}
-• Date: ${date}
+${dateLines}
 • Passengers: ${pax || 'TBD'}
 • Aircraft Category: ${catText}${notes ? '\n• Additional Notes: ' + notes : ''}
 
@@ -1454,14 +1487,12 @@ Thank you,
 
 ${signature}`;
 
-  const subject = `Flight Request – ${from} to ${to} | ${date}`;
+  const subject = `Flight Request – ${from} to ${to} | ${dateFormatted}`;
 
-  // Populate BCC
   const selectedOps = [...blastSelected].map(i => OPERATORS[i]);
-  const bccEmails = selectedOps.map(o => o.email.trim()).filter(Boolean);
   const bccBox = document.getElementById('blastBccBox');
   bccBox.innerHTML = selectedOps.map(o => `<span class="bcc-tag">${escHtml(o.name)}</span>`).join('');
-  document.getElementById('blastBccCount').textContent = `${bccEmails.length} operators • emails hidden from each other`;
+  document.getElementById('blastBccCount').textContent = `${selectedOps.length} operators • emails hidden from each other`;
 
   document.getElementById('blastSubject').value = subject;
   document.getElementById('blastBody').value = emailBody;
