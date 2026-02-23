@@ -41,8 +41,9 @@
     pointer-events: none; z-index: 0;
   }
 
-  /* ─── Layout ─── */
-  .app { position: relative; z-index: 1; display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+  .app { position: relative; z-index: 1; display: grid; grid-template-rows: 56px 1fr; height: 100vh; overflow: hidden; }
+  #emailView { display: grid; grid-template-columns: 320px 1fr 380px; height: 100%; overflow: hidden; }
+  #blastView { display: none; grid-template-columns: 300px 1fr 400px; height: 100%; overflow: hidden; }
 
   /* ─── Header ─── */
   header {
@@ -294,6 +295,75 @@
 
   .filter-row { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
   .filter-row input { flex: 1; }
+
+  /* ─── Tab Nav ─── */
+  .tab-nav { display: flex; align-items: center; gap: 4px; }
+  .tab-btn {
+    padding: 6px 16px; border-radius: 6px; border: 1px solid transparent;
+    font-family: 'DM Mono', monospace; font-size: 11px; cursor: pointer;
+    color: var(--muted); background: transparent; transition: all 0.15s;
+    letter-spacing: 0.3px;
+  }
+  .tab-btn:hover { color: var(--text); border-color: var(--border); }
+  .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tab-btn.blast-tab.active { background: var(--warn); border-color: var(--warn); color: #000; }
+
+  /* ─── Operator Blast Layout ─── */
+
+  /* ─── Drop Zone ─── */
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 10px;
+    padding: 28px 16px; text-align: center; cursor: pointer;
+    transition: all 0.2s; margin-bottom: 16px;
+    background: var(--panel);
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--warn); background: rgba(245,166,35,0.06); }
+  .drop-zone-icon { font-size: 28px; margin-bottom: 8px; }
+  .drop-zone-text { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .drop-zone-text strong { color: var(--warn); }
+  .drop-zone img { max-width: 100%; max-height: 160px; border-radius: 6px; margin-top: 10px; object-fit: contain; }
+
+  /* ─── Operator match list ─── */
+  .op-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 6px;
+    border: 1px solid var(--border); margin-bottom: 6px;
+    background: var(--panel); cursor: pointer; transition: all 0.15s;
+  }
+  .op-item:hover { border-color: var(--warn); }
+  .op-item.selected { border-color: var(--warn); background: rgba(245,166,35,0.08); }
+  .op-item.selected .op-check { background: var(--warn); color: #000; }
+  .op-check {
+    width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;
+    background: var(--subtle); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .op-name { font-size: 12px; color: var(--text); flex: 1; }
+  .op-email { font-size: 10px; color: var(--muted); }
+  .op-match-badge {
+    font-size: 9px; padding: 2px 6px; border-radius: 3px;
+    background: rgba(0,212,170,0.1); color: var(--accent2);
+    border: 1px solid rgba(0,212,170,0.2); white-space: nowrap;
+  }
+
+  .blast-sel-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; background: rgba(245,166,35,0.1);
+    border-top: 1px solid rgba(245,166,35,0.3); flex-shrink: 0;
+  }
+
+  /* ─── BCC tag display ─── */
+  .bcc-box {
+    background: var(--subtle); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px; min-height: 50px;
+    max-height: 120px; overflow-y: auto; margin-bottom: 4px;
+    display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start;
+  }
+  .bcc-tag {
+    background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.3);
+    color: var(--warn); font-size: 10px; padding: 2px 8px; border-radius: 12px;
+  }
 </style>
 </head>
 <body>
@@ -305,14 +375,21 @@
       <div class="logo-icon"></div>
       <div class="logo-text">Mail<span>Mind</span></div>
     </div>
+    <div class="tab-nav">
+      <button class="tab-btn active" id="tabEmail" onclick="switchTab('email')">✉ Email Assistant</button>
+      <button class="tab-btn blast-tab" id="tabBlast" onclick="switchTab('blast')">✈ Operator Blast</button>
+    </div>
     <div class="header-status">
       <div class="status-pill" id="outlookStatus"><span class="dot"></span>Outlook disconnected</div>
       <div class="status-pill" id="aiStatus"><span class="dot"></span>AI ready</div>
     </div>
   </header>
 
+  <!-- ─── Email Assistant View ─── -->
+  <div id="emailView">
+
   <!-- ─── Main ─── -->
-  <main>
+  <main style="display:contents;">
 
     <!-- Pane 1: Setup & Config -->
     <div class="pane">
@@ -493,7 +570,158 @@
     </div>
 
   </main>
-</div>
+  </div><!-- end emailView -->
+
+  <!-- ─── Operator Blast View ─── -->
+  <div id="blastView">
+
+    <!-- Pane A: Trip Details -->
+    <div class="pane">
+      <div class="pane-header"><div class="pane-title">✈ Trip Details</div></div>
+      <div class="pane-body">
+        <div class="setup-section">
+          <label class="setup-label">Departure Airport</label>
+          <input type="text" id="blastFrom" placeholder="e.g. SDL, PHX, DAL" />
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">Arrival Airport</label>
+          <input type="text" id="blastTo" placeholder="e.g. LAX, VNY, BUR" />
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">Date</label>
+          <input type="text" id="blastDate" placeholder="e.g. March 15, 2026" />
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">Passengers</label>
+          <input type="number" id="blastPax" placeholder="e.g. 4" min="1" max="20" />
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">Aircraft Category Needed</label>
+          <select id="blastAircraftCat">
+            <option value="">Any / All categories</option>
+            <option value="Light Jet">Light Jet</option>
+            <option value="Very Light Jet">Very Light Jet</option>
+            <option value="Midsize Jet">Midsize Jet</option>
+            <option value="Super-Midsize Jet">Super-Midsize Jet</option>
+            <option value="Large Cabin Jet">Large Cabin Jet</option>
+            <option value="Turboprop">Turboprop</option>
+          </select>
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">One-Way or Round Trip</label>
+          <select id="blastTripType">
+            <option value="one-way">One-Way</option>
+            <option value="round-trip">Round-Trip</option>
+          </select>
+        </div>
+        <div class="setup-section">
+          <label class="setup-label">Additional Notes (optional)</label>
+          <textarea id="blastNotes" placeholder="e.g. Pets on board, specific aircraft preference, catering needs..." rows="3"></textarea>
+        </div>
+        <hr class="divider" />
+        <div class="setup-section">
+          <label class="setup-label">Search All Operators</label>
+          <div class="filter-row">
+            <input type="text" id="opSearchInput" placeholder="Search by name..." oninput="filterOperators()" />
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px;" id="opSearchCount"></div>
+          <button class="btn btn-secondary btn-full btn-sm" onclick="selectAllVisible()">Select All Visible</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane B: Screenshot + Operator List -->
+    <div class="pane">
+      <div class="pane-header">
+        <div class="pane-title">📋 Operators</div>
+        <div style="font-size:11px;color:var(--muted);" id="opListCount"></div>
+      </div>
+      <div class="pane-body" id="opListPane">
+
+        <!-- Screenshot upload -->
+        <div class="drop-zone" id="screenshotZone" onclick="document.getElementById('screenshotInput').click()"
+          ondragover="event.preventDefault();this.classList.add('dragover')"
+          ondragleave="this.classList.remove('dragover')"
+          ondrop="handleScreenshotDrop(event)">
+          <div class="drop-zone-icon">📸</div>
+          <div class="drop-zone-text">
+            <strong>Upload a screenshot</strong> from your operator database<br/>
+            Claude will extract the operator names and match them to your master list
+          </div>
+          <img id="screenshotPreview" style="display:none;" />
+        </div>
+        <input type="file" id="screenshotInput" accept="image/*" style="display:none;" onchange="handleScreenshotFile(event)" />
+
+        <div id="extractThinking" style="display:none;" class="ai-thinking">
+          <div class="thinking-dots"><span></span><span></span><span></span></div>
+          <span style="font-size:11px;color:var(--accent);">Claude is reading the screenshot...</span>
+        </div>
+
+        <!-- Operator list renders here -->
+        <div id="opList">
+          <div class="empty-state">
+            <div class="empty-icon">✈</div>
+            <div class="empty-text">Upload a screenshot or search operators<br/>on the left to build your BCC list</div>
+          </div>
+        </div>
+
+      </div>
+      <div class="blast-sel-bar" id="blastSelBar" style="display:none;">
+        <div style="font-size:11px;color:var(--warn);" id="blastSelCount">0 operators selected</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-secondary" onclick="clearBlastSelection()">Clear</button>
+          <button class="btn btn-sm" style="background:var(--warn);color:#000;" onclick="buildBlastDraft()">Draft Outreach →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane C: Draft Email -->
+    <div class="pane">
+      <div class="pane-header"><div class="pane-title">📨 Outreach Draft</div></div>
+      <div class="pane-body">
+
+        <div id="blastThinking" style="display:none;" class="ai-thinking">
+          <div class="thinking-dots"><span></span><span></span><span></span></div>
+          <span style="font-size:11px;color:var(--accent);">Drafting your outreach email...</span>
+        </div>
+
+        <div id="blastDraftOutput" style="display:none;">
+          <div class="draft-field">
+            <label>BCC (all selected operators)</label>
+            <div class="bcc-box" id="blastBccBox"></div>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px;" id="blastBccCount"></div>
+          </div>
+          <div class="draft-field">
+            <label>Subject</label>
+            <input type="text" id="blastSubject" />
+          </div>
+          <div class="draft-field">
+            <label>Body</label>
+            <textarea id="blastBody" rows="14"></textarea>
+          </div>
+          <div class="send-row">
+            <button class="btn btn-full" style="background:var(--warn);color:#000;" onclick="sendBlast()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+              Send to All Operators
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="copyBlastDraft()">Copy</button>
+          </div>
+          <div class="hint" style="margin-top:14px;">
+            <strong>Note:</strong> This sends as BCC so operators don't see each other's emails.
+          </div>
+        </div>
+
+        <div id="blastDraftEmpty" class="empty-state">
+          <div class="empty-icon">✈</div>
+          <div class="empty-text">Select operators then click<br/>"Draft Outreach →"</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- end blastView -->
+
+</div><!-- end app -->
 
 <!-- Toast -->
 <div id="toast"></div>
@@ -506,6 +734,7 @@ let accessToken = null;
 let tokenExpiry = null;
 let emails = [];
 let selectedEmails = new Set();
+let connectedEmail = '';
 
 function getClientId() { return document.getElementById('clientId').value.trim(); }
 function getRedirectUri() { return document.getElementById('redirectUri').value.trim() || window.location.href.split('?')[0].split('#')[0]; }
@@ -581,6 +810,7 @@ async function refreshToken() {
 }
 
 function setOutlookConnected(email) {
+  connectedEmail = email || '';
   const s = document.getElementById('outlookStatus');
   s.className = 'status-pill connected';
   s.innerHTML = `<span class="dot"></span>${email || 'Connected'}`;
@@ -887,7 +1117,336 @@ function showToast(msg, type='') {
 // Pre-fill redirect URI
 window.addEventListener('load', () => {
   document.getElementById('redirectUri').value = window.location.href.split('?')[0];
+  renderAllOperators();
 });
+
+// ─────────────────────────────────────────────
+// Tab Switching
+// ─────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('emailView').style.display = tab === 'email' ? 'grid' : 'none';
+  document.getElementById('blastView').style.display = tab === 'blast' ? 'grid' : 'none';
+  document.getElementById('tabEmail').classList.toggle('active', tab === 'email');
+  document.getElementById('tabBlast').classList.toggle('active', tab === 'blast');
+  if (tab === 'blast') renderAllOperators();
+}
+
+// ─────────────────────────────────────────────
+// Operator Master List (454 operators)
+// ─────────────────────────────────────────────
+const MASTER_OPERATORS = [{"name":"24/7 JET, INC.","email":"sales@247jet.com"},{"name":"ABILENE AERO","email":"charter@abileneaero.com"},{"name":"ADVANCED AIR LLC","email":"flights@advancedairlines.com"},{"name":"AERO AIR CHARTER LLC","email":"hi@flywithaero.com"},{"name":"AERO AIR LLC","email":"flightops@aeroair.com"},{"name":"AIR ASSOCIATES CHARTER","email":"charter@airassociatesinc.com"},{"name":"AIR CHARTERS INC","email":"charter@airchartersteb.com"},{"name":"AIR7","email":"charter@flyair7.com"},{"name":"AIRCRAFT SERVICES GROUP","email":"charter@jetasg.com"},{"name":"AIRCRAFT TRANSPORT SERVICE","email":"charter@atsflights.com"},{"name":"AIRFLAIR INC","email":"info@airflairinc.com"},{"name":"AIRRESOURCE CHARTER LLC","email":"carl@airresourcegroup.com"},{"name":"AIRSHARE","email":"charter@flyairshare.com"},{"name":"AIRSHARE (OPERATED BY CIRCADIAN AVIATION LLC)","email":"quotes@flyairshare.com"},{"name":"AIRSMART","email":"sales@airsmartshare.com"},{"name":"AKAMAI AIR, LLC","email":"akamaiaircharter@gmail.com"},{"name":"AKLAK AIR LIMITED","email":"CHARTERS@AKLAKAIR.CA"},{"name":"ALERION AVIATION","email":"charter@flyalerion.com"},{"name":"ALGJET","email":"chris@algjet.com"},{"name":"ALPHA JET CHARTER","email":"chartersales@alphajet.com"},{"name":"ALTIUS AVIATION LLC","email":"info@flyaltius.com"},{"name":"AMERICAN JET INTERNATIONAL CORPORATION","email":"chartersales@iflyaji.com"},{"name":"AMERISTAR JET CHARTER, INC","email":"QUOTES@AMERISTARJET.COM"},{"name":"AMERITEX AIRWAYS INC","email":"sales@ameritexjet.com"},{"name":"ATS","email":"charter@atsflights.com"},{"name":"ATS AIR CHARTER","email":"charter@aerotechservices.com"},{"name":"AVALAIR AIRCRAFT MANAGEMENT LLC","email":"charter@avalair.com"},{"name":"AVCENTER INC","email":"charter@avcenter.com"},{"name":"AVIATION CHARTERS","email":"charter@aviationcharters.com"},{"name":"AVIATION SERVICES ELITE","email":"charter@myelitejet.com"},{"name":"AVION JET CHARTER","email":"info@avionjetcharter.net"},{"name":"AYLA AVIATION","email":"id@ayla.aero"},{"name":"BAKER AVIATION LLC","email":"charter@baker-aviation.com"},{"name":"BELLAIR AVIATION LLC","email":"charter@flybellair.com"},{"name":"BRAZOS VALLEY AIR CHARTER LLC","email":"achenoweth@brazosvalleyair.com"},{"name":"BUN AIR CHARTER","email":"charter@bunaircorp.com"},{"name":"CAPITAL JET CHARTER","email":"glenn@capitaljetcharter.com"},{"name":"CENTRAL FLYING SERVICE INC","email":"charter@central.aero"},{"name":"CENTURY AVIATION INC","email":"operations@centuryaviation.us"},{"name":"CENTURY JETS","email":"charter@centuryjets.com"},{"name":"CHAIRMAN AVIATION LLC","email":"Bryan@ChairmanAviation.com"},{"name":"CHARTER AIRLINES","email":"chartersales@flycharterairlines.net"},{"name":"CHARTER ONE INC","email":"charter@charter1.com"},{"name":"CHICAGO JET GROUP","email":"charter@cjg.aero"},{"name":"CHOICE AVIATION LLC","email":"flight@choiceaviation.com"},{"name":"CHRYSLER AVIATION INC","email":"info@chrysleraviation.com"},{"name":"CIRRUS AVIATION SERVICES","email":"sales@cirrusav.com"},{"name":"CLAY LACY AVIATION","email":"charter@claylacy.com"},{"name":"CLUB JET CHARTER","email":"request@clubjet.net"},{"name":"CONTOUR AVIATION","email":"charter@flycontour.com"},{"name":"CRAFT CHARTER","email":"charter@craftcharter.com"},{"name":"CUTTER AVIATION","email":"charter@cutteraviation.com"},{"name":"DESERT JET LLC","email":"flights@flyadvancedair.com"},{"name":"DIAMOND AVIATION","email":"charter@diamondaviation.biz"},{"name":"DISCOVERY JETS","email":"charter.sales@discoveryjets.com"},{"name":"DREAMLINE AVIATION LLC","email":"charter@dljets.com"},{"name":"EAGLE AIR AVIATION","email":"charter@eagleairaviation.com"},{"name":"EAST COAST FLIGHT SERVICES INC","email":"charter@eastcoastjets.com"},{"name":"ELEVAGE FLIGHT TRAVEL","email":"info@elevage.travel"},{"name":"ELIT'AVIA AMERICAS","email":"charter@elitavia.com"},{"name":"ELITE AIR INC","email":"charter@eliteair.com"},{"name":"ENCORE JET MANAGEMENT LLC","email":"charters@encorejet.us"},{"name":"ERIN AIR INC","email":"charter@erinair.com"},{"name":"ETC JETS","email":"brent@easttexascharter.com"},{"name":"EXEC 1 AVIATION","email":"charter@exec1aviation.com"},{"name":"EXEC AIR MONTANA INC","email":"office@execairmontana.com"},{"name":"EXECUTIVE FLITEWAYS","email":"charter@fly-efi.com"},{"name":"EXECUTIVE JET MANAGEMENT","email":"quotes@ejmjets.com"},{"name":"FIRST AV GROUP LLC","email":"steve@firstavgroup.com"},{"name":"FLIGHT CONCEPTS INC","email":"charter@fltconcepts.com"},{"name":"FLYADVANCED","email":"charter@flyadvanced.com"},{"name":"FLYCAROLINA LLC","email":"charter@flycarolina.com"},{"name":"FLYEXCLUSIVE","email":"sales@flyexclusive.com"},{"name":"FLYHOUSE","email":"charter@flyhouse.us"},{"name":"FLYTRU","email":"quotes@flytru.com"},{"name":"FOUNDATION AVIATION","email":"sales@foundationaviation.com"},{"name":"GLOBAL AIR CHARTERS","email":"gacsales@gac.aero"},{"name":"GLOBAL AVIATION INC","email":"charter@flyglobalnow.com"},{"name":"GOLD AVIATION","email":"charter@goldaviation.com"},{"name":"GOLDEN STATE AIR CHARTER LLC","email":"charter@goldenstateair.com"},{"name":"HANGAR 7 AVIATION","email":"charter@flyhangar7.com"},{"name":"HAVEN AERO","email":"info@havenaero.com"},{"name":"INTERNATIONAL GROUP LLC","email":"charter@fly-ig.com"},{"name":"JET 1 CHARTER","email":"charter@flyjet1.com"},{"name":"JET ACCESS AVIATION","email":"sales@flyja.com"},{"name":"JET AIR INC","email":"charter@jetairinc.com"},{"name":"JET AVIATION","email":"charter.usa@jetaviation.com"},{"name":"JET LINX AVIATION","email":"charter@jetlinx.com"},{"name":"JET METHODS INC","email":"charter@jetmethods.com"},{"name":"JET SERVICES INC","email":"scheduling@flyjetservices.com"},{"name":"JET THERE LLC","email":"charter@flyjetthere.com"},{"name":"JET UP AVIATION LLC","email":"dan@jetupaviation.com"},{"name":"JET-A LLC","email":"fly@jet-a.com"},{"name":"JETNEXA","email":"charter@jetnexa.com"},{"name":"JETVIA (FORMERLY ATI JET)","email":"info@jetvia.com"},{"name":"JOHNSON AVIATION","email":"johnson.aviation@gmail.com"},{"name":"JSX","email":"charter@jsx.com"},{"name":"JUSTICE AIR CHARTER","email":"charter@justiceair.com"},{"name":"KCAC AVIATION","email":"charter@kcac.com"},{"name":"LATITUDE 33 AVIATION","email":"charter@l33jets.com"},{"name":"LEGACY JETS","email":"charter@legacyjets.com"},{"name":"LET'S JETT","email":"sales@letsjett.com"},{"name":"LEVIATE AIR GROUP","email":"charter@leviateair.com"},{"name":"LIBERTY JET","email":"charter@libertyjet.com"},{"name":"LONE STAR AVIATORS","email":"info@lonestaraviators.com"},{"name":"LOYD'S AVIATION","email":"charter@loydsaviation.com"},{"name":"LYON AVIATION INC","email":"charter@lyonaviation.com"},{"name":"M&N AVIATION","email":"charter@mandn.aero"},{"name":"MAC JET CHARTER","email":"charter@macairgroup.com"},{"name":"MACH ONE AIR CHARTERS INC","email":"charter@moaci.com"},{"name":"MIDWEST FLYING SERVICE","email":"info@midwestflyingservice.com"},{"name":"MOUNTAIN LION AVIATION","email":"jt@phhllc.com"},{"name":"NEW WORLD AVIATION","email":"charter@newworldaviation.com"},{"name":"NEXJET CORPORATION","email":"info@nexjet.com"},{"name":"NICHOLAS AIR","email":"charter@nicholasair.com"},{"name":"NORTH AMERICAN AIR CHARTER INC","email":"charter@naac.com"},{"name":"NORTH DALLAS AVIATION","email":"charter@flynda.com"},{"name":"NORTHEASTERN AVIATION CORP","email":"charter@neajets.com"},{"name":"NOW AIR LLC","email":"chartersales@nowairllc.com"},{"name":"ONWARD JETS, LLC","email":"sales@onwardjets.com"},{"name":"PARADIGM JET MANAGEMENT","email":"charter@paradigmjet.com"},{"name":"PARADISE JETS LLC","email":"sales@paradisejets.com"},{"name":"PARAGON AIRWAYS","email":"charter@paragonairways.com"},{"name":"PEGASUS ELITE AVIATION INC","email":"sales@pegjet.com"},{"name":"PEREGRINE AIR CHARTERS LLC","email":"info@peregrineaircharter.com"},{"name":"PINNACLE AVIATION","email":"charter@pinnacleaviation.com"},{"name":"PLANET 9","email":"sales@flyplanet9.com"},{"name":"PORTLAND JETS","email":"charter@portjets.com"},{"name":"PREMIER AIR CHARTER LLC","email":"charter@premieraircharter.com"},{"name":"PREMIER JETS INC","email":"operations@premierjets.com"},{"name":"PRESIDENTIAL AVIATION INC","email":"charter@presidential-aviation.com"},{"name":"PRESTIGE AIR GROUP LLC","email":"bookings@prestigeairgroup.com"},{"name":"PRIESTER AVIATION LLC","email":"quotes@priesterav.com"},{"name":"PRIME JET","email":"charter@primejet.com"},{"name":"PRISMJET","email":"charter@prismjet.net"},{"name":"PRIVATE JETS INC","email":"pjets.szepeda@gmail.com"},{"name":"PVT AIR","email":"admin@pvtair.com"},{"name":"REGENCY AIR LLC","email":"charter@regencyair.com"},{"name":"RELIANT AIR CHARTER INC","email":"contact@reliantair.com"},{"name":"RENNIA GLOBAL","email":"charter@renniaglobal.com"},{"name":"ROCKHILL AVIATION INC","email":"sales@rockhillaviation.com"},{"name":"RVR AIR CHARTER","email":"charter@rvrair.com"},{"name":"SCHUBACH AVIATION","email":"sales@schubachaviation.com"},{"name":"SENECA FLIGHT OPERATIONS","email":"info@senecaflight.com"},{"name":"SHORT HILLS AVIATION SERVICES","email":"charter@shorthillsaviation.com"},{"name":"SILVER AIR","email":"charter@silverair.com"},{"name":"SILVERHAWK AVIATION","email":"charter@silverhawkaviation.com"},{"name":"SKYDANCE AIR","email":"chartersales@skydanceair.com"},{"name":"SKYNET AIR CHARTER","email":"charter@skynetcharter.com"},{"name":"SKYSTREAM JET","email":"charter@skystreamjet.com"},{"name":"SOFAR AIR","email":"hq@flysofar.com"},{"name":"SOLAIRUS AVIATION","email":"charter@solairus.aero"},{"name":"SOULBIRD AVIATION LLC","email":"charter@flysoulbird.com"},{"name":"SOUTHERN SKY AVIATION LLC","email":"charter@southernskyaviation.com"},{"name":"SPEED AVIATION INC","email":"steve.hauth@speedaviationinc.com"},{"name":"STA JETS","email":"charter@stajets.com"},{"name":"STARFLITE AVIATION","email":"charter@starfliteaviation.com"},{"name":"STARJET INC","email":"charter@starjetinc.com"},{"name":"STEBBINS AVIATION INC","email":"charter@stebbinsav.com"},{"name":"SUNBIRD AVIATION LLC","email":"charter@ocsunbird.com"},{"name":"SUNRISE JETS","email":"charter@sunrisejets.com"},{"name":"SUPERIOR AIR CHARTER LLC","email":"charter@superior.flights"},{"name":"SWC SKYWEST CHARTER","email":"trenton.moss@flyswc.com"},{"name":"TAG GLOBAL","email":"info@flytti.com"},{"name":"TALON AIR INC","email":"ca@talonairjets.com"},{"name":"TAUGHANNOCK AVIATION CORP","email":"flight@flytac.com"},{"name":"TAVAERO JET CHARTER CORPORATION","email":"charter@tavaero.com"},{"name":"THADEN FIELD","email":"charter@thadenfield.com"},{"name":"THRIVE AVIATION","email":"charter@flythrive.com"},{"name":"TITAN AVIATION (OPB ONYX AIR)","email":"info@tajets.aero"},{"name":"TODDCOE AVIATION","email":"charter@toddcoeaviation.com"},{"name":"TRADEWIND AVIATION LLC","email":"charter@flytradewind.com"},{"name":"TRANS-EXEC PRIVATE JETS","email":"charter@transexec.com"},{"name":"TRIDENT AIRCRAFT, INC","email":"charter@tridentaircraft.com"},{"name":"TRITON AIR","email":"tripmanagement@flytritonair.com"},{"name":"VENTURA AIR SERVICES INC","email":"charter@ventura.aero"},{"name":"VISTA US (OPB JET SELECT LLC)","email":"salesus@vistajet.com"},{"name":"VOLATO","email":"charters@flyvolato.com"},{"name":"WEST COAST AVIATION SERVICES","email":"charter@wcas.aero"},{"name":"WHEELS UP","email":"quotes@wheelsup.com"},{"name":"WING AVIATION CHARTER SERVICES LLC","email":"charter@wingaviation.com"},{"name":"WORLDWIDE JET","email":"charter@worldwidejet.com"},{"name":"X-PRESS CHARTER SERVICES INC","email":"REQUESTS@XPRESSCHARTER.COM"},{"name":"XCEL JET MANAGEMENT INC","email":"charter@xceljet.com"},{"name":"VIH EXECUJET LTD","email":"charter@vih.com"},{"name":"AURORA JET PARTNERS","email":"charters@aurorajet.ca"},{"name":"ANDERSON AIR LTD","email":"dispatch@andersonair.ca"},{"name":"SELECT AERO INC","email":"info@select.aero"},{"name":"AD ASTRA","email":"dom@adastraflights.com"},{"name":"ADVANCED AIR","email":"flights@flyadvancedair.com"},{"name":"AMERICAN JET CHARTER INC","email":"charter@american-jet.com"},{"name":"CLEMENS AVIATION LLC","email":"sales@clemensaviation.com"},{"name":"ENG AVIATION","email":"charter@engaviation.com"},{"name":"LYDDON AERO CENTER INC","email":"jen@lyddonaero.com"},{"name":"KERN CHARTER SERVICE INC","email":"INFO@KERNCHARTER.COM"},{"name":"OPTIMAL AVIATION SERVICES LLC","email":"flyoptimalaviation@gmail.com"},{"name":"ABOVE ALL AVIATION, INC.","email":"fly@aboveallsba.com"},{"name":"SUN AIR JETS, LLC","email":"charter@sunairjets.com"},{"name":"MARC AIR","email":"lloyd@marcair.com"},{"name":"CLIPPER AVIATION CHARTER","email":"charter@clipperaviation.com"},{"name":"WESTAIR CHARTER","email":"charter@westair.com"},{"name":"HARVEY AVIATION","email":"info@harveyaviation.com"},{"name":"CSM AVIATION","email":"charter@csmaviation.com"},{"name":"ACTION AIR EXPRESS INC","email":"INFO@ACTIONAIREXPRESS.COM"},{"name":"JET EXCELLENCE","email":"charter@jetexcellence.com"},{"name":"AERY AVIATION LLC","email":"aerydispatch@aeryaviation.com"},{"name":"AIRA AVIATION LLC","email":"info@airaaviation.com"},{"name":"AIRQUEST AVIATION LP","email":"charter@airquestaviation.com"},{"name":"AITHERAS AVIATION GROUP LLC","email":"marc@aagjet.com"},{"name":"AMG JETS","email":"charter@amgjets.com"},{"name":"BUSINESS JET MANAGERS INC","email":"dispatch@businessjetmanagers.com"},{"name":"CASTLE AVIATION INC","email":"fltops@castleair.com"},{"name":"CORPORATE AIR LLC","email":"charter@corporateairllc.com"},{"name":"FLAGSHIP PRIVATE AIR LLC","email":"charter@flagshipprivateair.com"},{"name":"GRIFFING FLYING SERVICE INC","email":"charter@flygriffing.com"},{"name":"JET AMERICA INC","email":"charter@jetamericainc.com"},{"name":"JETPORT INC","email":"charters@jetport.com"},{"name":"KALITTA CHARTERS LLC","email":"135ops@kalittacharters.com"},{"name":"NORTHSTAR BUSINESS AVIATION","email":"charter@northstarair.com"},{"name":"PENTASTAR AVIATION CHARTER","email":"charterquote@pentastar.aero"},{"name":"PRIVATE JET CENTER","email":"charter@flypjc.com"},{"name":"ROYAL AIR CHARTER","email":"charter@royalair.com"},{"name":"SKY QUEST LLC","email":"charter@flyskyquest.com"},{"name":"SWEET AVIATION","email":"charter@sweetaviation.com"},{"name":"FLIGHTEXEC","email":"travelsolutions@flightexec.com"},{"name":"JETVIA","email":"sales@jetvia.com"},{"name":"APEX JETS","email":"charter@apexjets.net"},{"name":"MAYO AVIATION INC","email":"quotes@mayoaviation.com"},{"name":"RB AVIATION LLC","email":"charters@rb-aviation.com"},{"name":"NEW ENGLAND AIR TRANSPORT INC","email":"hello@flyneatair.com"},{"name":"INTERNATIONAL JET AVIATION SERVICES INC","email":"ADAM@INTERNATIONALJET.COM"},{"name":"PRECISION AIRCRAFT MANAGEMENT","email":"scheduling@precisionacm.com"},{"name":"SOUTHWEST AIRCRAFT CHARTER","email":"info@swaircraftcharter.com"},{"name":"MODESTO JET CENTER","email":"fly@modestojet.com"},{"name":"SLATE AVIATION","email":"smunroe@flyslate.com"},{"name":"ZENFLIGHT","email":"fly@zenflight.com"},{"name":"SPRING CITY AVIATION","email":"charter@springcityaviation.com"},{"name":"45 NORTH AVIATION","email":"info@45northaviation.com"},{"name":"TRITON AIRWAYS LLC","email":"charter@tritonairways.com"},{"name":"CENTURION FLIGHT SERVICES INC","email":"charter@centurionfs.com"},{"name":"HIGHRIZE AVIATION LLC","email":"info@highrizeaviation.com"},{"name":"FUGA AIR CHARTER","email":"Ifly@airfuga.com"},{"name":"ASPEN HELICOPTERS INC","email":"dispatch@aspenhelo.com"},{"name":"FREEDOM AIR LLC","email":"sean.harris@freedomairllc.com"},{"name":"RFS AVIATION","email":"charles@rfsaviation.com"},{"name":"GOLD AERO","email":"goldaeroinc@gmail.com"},{"name":"FLIGHTLINE FIRST LLC","email":"flightlinefirst@gmail.com"},{"name":"MOUNTAIN AIR CHARTER LLC","email":"jt@phhllc.com"},{"name":"PLANESMART! CHARTER, LLC","email":"charter@planesmart.com"}];
+
+// deduplicate by email
+const seen = new Set();
+const OPERATORS = MASTER_OPERATORS.filter(o => {
+  const key = o.email.toLowerCase().trim();
+  if (seen.has(key)) return false;
+  seen.add(key); return true;
+});
+
+// ─────────────────────────────────────────────
+// Operator Blast State
+// ─────────────────────────────────────────────
+let blastSelected = new Set(); // indices into OPERATORS
+let visibleOperators = [...OPERATORS.keys()]; // indices of visible operators
+
+function renderAllOperators() {
+  visibleOperators = OPERATORS.map((_, i) => i);
+  document.getElementById('opSearchCount').textContent = `${OPERATORS.length} operators in master list`;
+  renderOpList(visibleOperators);
+}
+
+function filterOperators() {
+  const q = document.getElementById('opSearchInput').value.trim().toLowerCase();
+  if (!q) { visibleOperators = OPERATORS.map((_, i) => i); }
+  else { visibleOperators = OPERATORS.map((o, i) => q && (o.name.toLowerCase().includes(q) || o.email.toLowerCase().includes(q)) ? i : -1).filter(i => i >= 0); }
+  document.getElementById('opSearchCount').textContent = `${visibleOperators.length} operators found`;
+  renderOpList(visibleOperators);
+}
+
+function renderOpList(indices) {
+  const el = document.getElementById('opList');
+  document.getElementById('opListCount').textContent = `${indices.length} shown`;
+  if (!indices.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">No operators found</div></div>`; return; }
+  el.innerHTML = indices.map(i => {
+    const op = OPERATORS[i];
+    const sel = blastSelected.has(i);
+    return `<div class="op-item ${sel ? 'selected' : ''}" onclick="toggleOp(${i})">
+      <div class="op-check">${sel ? '✓' : ''}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="op-name">${escHtml(op.name)}</div>
+        <div class="op-email">${escHtml(op.email)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  updateBlastSelBar();
+}
+
+function toggleOp(i) {
+  if (blastSelected.has(i)) blastSelected.delete(i);
+  else blastSelected.add(i);
+  // Re-render just that item
+  const items = document.querySelectorAll('.op-item');
+  const idx = visibleOperators.indexOf(i);
+  if (idx >= 0 && items[idx]) {
+    const sel = blastSelected.has(i);
+    items[idx].className = `op-item ${sel ? 'selected' : ''}`;
+    items[idx].querySelector('.op-check').textContent = sel ? '✓' : '';
+  }
+  updateBlastSelBar();
+}
+
+function selectAllVisible() {
+  visibleOperators.forEach(i => blastSelected.add(i));
+  renderOpList(visibleOperators);
+}
+
+function clearBlastSelection() {
+  blastSelected.clear();
+  renderOpList(visibleOperators);
+}
+
+function updateBlastSelBar() {
+  const bar = document.getElementById('blastSelBar');
+  if (blastSelected.size > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('blastSelCount').textContent = `${blastSelected.size} operator${blastSelected.size > 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Screenshot → Extract Operator Names
+// ─────────────────────────────────────────────
+function handleScreenshotDrop(e) {
+  e.preventDefault();
+  document.getElementById('screenshotZone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) processScreenshot(file);
+}
+
+function handleScreenshotFile(e) {
+  const file = e.target.files[0];
+  if (file) processScreenshot(file);
+}
+
+async function processScreenshot(file) {
+  const apiKey = document.getElementById('anthropicKey').value.trim();
+  if (!apiKey) { showToast('Please enter your Anthropic API key first.', 'error'); return; }
+
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = document.getElementById('screenshotPreview');
+    img.src = e.target.result;
+    img.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+
+  // Convert to base64
+  const base64 = await new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.readAsDataURL(file);
+  });
+
+  document.getElementById('extractThinking').style.display = 'flex';
+  document.getElementById('opList').innerHTML = '';
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
+            { type: 'text', text: 'This is a screenshot from an aircraft operator database. Extract every operator/company name visible in this screenshot. Return ONLY a JSON array of strings with the operator names, nothing else. Example: ["OPERATOR ONE", "OPERATOR TWO"]' }
+          ]
+        }]
+      })
+    });
+    const data = await response.json();
+    let text = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+    const names = JSON.parse(text);
+    matchAndSelectOperators(names);
+    showToast(`Extracted ${names.length} operator names from screenshot`, 'success');
+  } catch(e) {
+    console.error(e);
+    showToast('Failed to read screenshot: ' + e.message, 'error');
+    renderOpList(visibleOperators);
+  } finally {
+    document.getElementById('extractThinking').style.display = 'none';
+  }
+}
+
+function fuzzyMatch(name, query) {
+  const n = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const q = query.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (n === q) return 100;
+  if (n.includes(q) || q.includes(n)) return 85;
+  // Check word overlap
+  const nWords = n.split(' ');
+  const qWords = q.split(' ');
+  const overlap = qWords.filter(w => w.length > 2 && nWords.some(nw => nw.includes(w) || w.includes(nw)));
+  return overlap.length > 0 ? 60 + overlap.length * 10 : 0;
+}
+
+function matchAndSelectOperators(names) {
+  blastSelected.clear();
+  const matchedIndices = [];
+  names.forEach(name => {
+    let bestScore = 0, bestIdx = -1;
+    OPERATORS.forEach((op, i) => {
+      const score = fuzzyMatch(op.name, name);
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    });
+    if (bestScore >= 60 && bestIdx >= 0) {
+      blastSelected.add(bestIdx);
+      matchedIndices.push(bestIdx);
+    }
+  });
+  visibleOperators = matchedIndices.length > 0 ? matchedIndices : OPERATORS.map((_, i) => i);
+  renderOpList(visibleOperators);
+  showToast(`Matched ${blastSelected.size} operators from your master list`, 'success');
+}
+
+// ─────────────────────────────────────────────
+// Build Blast Draft
+// ─────────────────────────────────────────────
+async function buildBlastDraft() {
+  const apiKey = document.getElementById('anthropicKey').value.trim();
+  if (!apiKey) { showToast('Please enter your Anthropic API key.', 'error'); return; }
+  if (blastSelected.size === 0) { showToast('Please select at least one operator.', 'error'); return; }
+
+  const from = document.getElementById('blastFrom').value.trim();
+  const to = document.getElementById('blastTo').value.trim();
+  const date = document.getElementById('blastDate').value.trim();
+  const pax = document.getElementById('blastPax').value.trim();
+  const cat = document.getElementById('blastAircraftCat').value;
+  const tripType = document.getElementById('blastTripType').value;
+  const notes = document.getElementById('blastNotes').value.trim();
+
+  if (!from || !to || !date) { showToast('Please fill in departure, arrival, and date.', 'error'); return; }
+
+  document.getElementById('blastThinking').style.display = 'flex';
+  document.getElementById('blastDraftOutput').style.display = 'none';
+  document.getElementById('blastDraftEmpty').style.display = 'none';
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: `You are an assistant for Valley Jet, a private jet charter broker. Draft a professional, concise flight request email to send to aircraft operators asking for availability and pricing. Respond with ONLY a JSON object: {"subject": "...", "body": "..."}`,
+        messages: [{
+          role: 'user',
+          content: `Write a flight request email to operators with these details:
+Trip type: ${tripType}
+Departure: ${from}
+Arrival: ${to}
+Date: ${date}
+Passengers: ${pax || 'TBD'}
+Aircraft category needed: ${cat || 'Open to all categories'}
+Additional notes: ${notes || 'None'}
+
+The email should:
+- Be professional but concise
+- Ask for aircraft availability, tail number, and all-in pricing
+- Request a timely response
+- Be signed from Valley Jet charter team
+- NOT mention any specific operator name (it goes to multiple operators via BCC)`
+        }]
+      })
+    });
+    const data = await response.json();
+    let text = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+    const draft = JSON.parse(text);
+
+    // Populate BCC
+    const selectedOps = [...blastSelected].map(i => OPERATORS[i]);
+    const bccEmails = selectedOps.map(o => o.email.trim()).filter(Boolean);
+    const bccBox = document.getElementById('blastBccBox');
+    bccBox.innerHTML = selectedOps.map(o => `<span class="bcc-tag">${escHtml(o.name)}</span>`).join('');
+    document.getElementById('blastBccCount').textContent = `${bccEmails.length} operators • emails hidden from each other`;
+
+    document.getElementById('blastSubject').value = draft.subject || '';
+    document.getElementById('blastBody').value = draft.body || '';
+    document.getElementById('blastDraftOutput').style.display = 'block';
+    showToast('Outreach email ready!', 'success');
+  } catch(e) {
+    console.error(e);
+    showToast('Draft failed: ' + e.message, 'error');
+    document.getElementById('blastDraftEmpty').style.display = 'flex';
+  } finally {
+    document.getElementById('blastThinking').style.display = 'none';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Send Blast Email
+// ─────────────────────────────────────────────
+async function sendBlast() {
+  if (!accessToken) { showToast('Please connect Outlook first.', 'error'); return; }
+  const subject = document.getElementById('blastSubject').value.trim();
+  const body = document.getElementById('blastBody').value.trim();
+  const selectedOps = [...blastSelected].map(i => OPERATORS[i]);
+  const bccEmails = [...new Set(selectedOps.map(o => o.email.trim()).filter(Boolean))];
+
+  if (!bccEmails.length) { showToast('No operator emails to send to.', 'error'); return; }
+
+  const sendBtn = document.querySelector('#blastDraftOutput .btn');
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span> Sending...';
+
+  try {
+    await refreshToken();
+    const message = {
+      message: {
+        subject,
+        body: { contentType: 'Text', content: body },
+        toRecipients: [{ emailAddress: { address: connectedEmail || 'charter@valleyjet.com' } }],
+        bccRecipients: bccEmails.map(e => ({ emailAddress: { address: e } }))
+      }
+    };
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    showToast(`Sent to ${bccEmails.length} operators!`, 'success');
+    sendBtn.innerHTML = `✓ Sent to ${bccEmails.length} operators!`;
+    setTimeout(() => { sendBtn.disabled = false; sendBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg> Send to All Operators'; }, 4000);
+  } catch(e) {
+    console.error(e);
+    showToast('Send failed: ' + e.message, 'error');
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg> Send to All Operators';
+  }
+}
+
+function copyBlastDraft() {
+  const s = document.getElementById('blastSubject').value;
+  const b = document.getElementById('blastBody').value;
+  navigator.clipboard.writeText(`Subject: ${s}\n\n${b}`).then(() => showToast('Copied!', 'success'));
+}
 </script>
 </body>
 </html>
