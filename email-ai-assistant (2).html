@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MailMind — AI Email Assistant</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg:       #0b0e14;
+    --surface:  #111520;
+    --panel:    #161b28;
+    --border:   #1e2639;
+    --accent:   #3b6ef8;
+    --accent2:  #00d4aa;
+    --danger:   #ff4f4f;
+    --warn:     #f5a623;
+    --text:     #e8ecf5;
+    --muted:    #5a6380;
+    --subtle:   #232b40;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ─── Layout ─── */
+  .app { position: relative; z-index: 1; display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+
+  /* ─── Header ─── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: var(--accent);
+    clip-path: polygon(0 20%, 50% 0%, 100% 20%, 100% 80%, 50% 100%, 0 80%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .logo-text { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; letter-spacing: -0.5px; }
+  .logo-text span { color: var(--accent); }
+  .header-status { display: flex; align-items: center; gap: 20px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: var(--subtle);
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .status-pill.connected { color: var(--accent2); border-color: var(--accent2); background: rgba(0,212,170,0.08); }
+  .status-pill.connected .dot { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+  /* ─── Main ─── */
+  main { display: grid; grid-template-columns: 320px 1fr 380px; overflow: hidden; }
+  .pane {
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .pane:last-child { border-right: none; }
+  .pane-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .pane-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pane-body { flex: 1; overflow-y: auto; padding: 16px; }
+  .pane-body::-webkit-scrollbar { width: 4px; }
+  .pane-body::-webkit-scrollbar-track { background: transparent; }
+  .pane-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ─── Setup Panel ─── */
+  .setup-section { margin-bottom: 24px; }
+  .setup-label {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: block;
+  }
+  input, textarea, select {
+    width: 100%;
+    background: var(--subtle);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  select option { background: var(--panel); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 9px 18px;
+    border-radius: 6px;
+    border: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #5580ff; transform: translateY(-1px); }
+  .btn-secondary { background: var(--subtle); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn-success { background: var(--accent2); color: #000; }
+  .btn-success:hover:not(:disabled) { background: #00f0c3; }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover:not(:disabled) { background: rgba(255,79,79,0.1); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+  .btn-sm { padding: 5px 12px; font-size: 11px; }
+  .btn-full { width: 100%; }
+
+  /* ─── Step badges ─── */
+  .step-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 20px; }
+  .step-num {
+    width: 24px; height: 24px; flex-shrink: 0;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 12px;
+  }
+  .step-content { flex: 1; }
+  .step-title { font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+  .step-desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .step-desc a { color: var(--accent); text-decoration: none; }
+  .step-desc a:hover { text-decoration: underline; }
+
+  /* ─── Email list ─── */
+  .email-item {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--panel);
+    position: relative;
+  }
+  .email-item:hover { border-color: var(--accent); background: var(--subtle); }
+  .email-item.selected { border-color: var(--accent); background: rgba(59,110,248,0.08); }
+  .email-item.selected::before {
+    content: '✓';
+    position: absolute; top: 10px; right: 12px;
+    color: var(--accent); font-size: 13px;
+  }
+  .email-from { font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+  .email-subject { font-size: 11px; color: var(--accent2); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .email-preview { font-size: 10px; color: var(--muted); line-height: 1.4; overflow: hidden; max-height: 32px; }
+  .email-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .email-date { font-size: 10px; color: var(--muted); }
+  .email-badge {
+    font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 3px;
+    background: var(--subtle); color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  /* ─── Empty states ─── */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 200px; gap: 12px; color: var(--muted); text-align: center;
+  }
+  .empty-icon { font-size: 32px; opacity: 0.3; }
+  .empty-text { font-size: 11px; line-height: 1.5; }
+
+  /* ─── Draft panel ─── */
+  .draft-field { margin-bottom: 16px; }
+  .draft-field label { display: block; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+
+  .ai-thinking {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px; border-radius: 8px;
+    background: rgba(59,110,248,0.08);
+    border: 1px solid rgba(59,110,248,0.25);
+    margin-bottom: 16px;
+  }
+  .thinking-dots span {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); margin: 0 2px;
+    animation: bounce 1.2s infinite;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)} }
+
+  .send-row { display: flex; gap: 10px; margin-top: 16px; }
+
+  /* ─── Toast ─── */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 20px;
+    border-radius: 8px; font-size: 12px;
+    opacity: 0; transition: all 0.3s; z-index: 1000;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: var(--accent2); color: var(--accent2); }
+  #toast.error { border-color: var(--danger); color: var(--danger); }
+
+  /* ─── Tag badges ─── */
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.5px; background: var(--subtle); color: var(--muted); border: 1px solid var(--border); margin: 2px; cursor: default; }
+
+  /* ─── Selected count bar ─── */
+  .sel-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(59,110,248,0.12);
+    border-top: 1px solid rgba(59,110,248,0.3);
+    flex-shrink: 0;
+  }
+  .sel-bar-text { font-size: 11px; color: var(--accent); }
+
+  /* ─── Prompt builder ─── */
+  .prompt-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .prompt-chip {
+    padding: 4px 10px; border-radius: 20px; font-size: 11px;
+    background: var(--subtle); border: 1px solid var(--border);
+    color: var(--muted); cursor: pointer; transition: all 0.15s;
+  }
+  .prompt-chip:hover, .prompt-chip.active { background: rgba(59,110,248,0.15); border-color: var(--accent); color: var(--accent); }
+  .prompt-chip-quote { border-color: var(--warn) !important; color: var(--warn) !important; background: rgba(245,166,35,0.08) !important; font-weight: 500; }
+  .prompt-chip-quote:hover, .prompt-chip-quote.active { background: rgba(245,166,35,0.2) !important; box-shadow: 0 0 10px rgba(245,166,35,0.2); }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  .hint {
+    font-size: 10px; color: var(--muted); line-height: 1.6;
+    background: var(--subtle); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px;
+    margin-bottom: 16px;
+  }
+  .hint strong { color: var(--warn); }
+
+  /* loading spinner */
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Scrollbar (global) ─── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .filter-row { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .filter-row input { flex: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ─── Header ─── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon"></div>
+      <div class="logo-text">Mail<span>Mind</span></div>
+    </div>
+    <div class="header-status">
+      <div class="status-pill" id="outlookStatus"><span class="dot"></span>Outlook disconnected</div>
+      <div class="status-pill" id="aiStatus"><span class="dot"></span>AI ready</div>
+    </div>
+  </header>
+
+  <!-- ─── Main ─── -->
+  <main>
+
+    <!-- Pane 1: Setup & Config -->
+    <div class="pane">
+      <div class="pane-header">
+        <div class="pane-title">⚙ Configuration</div>
+      </div>
+      <div class="pane-body">
+
+        <!-- Step 1: Azure App -->
+        <div class="setup-section">
+          <div class="step-row">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <div class="step-title">Azure App Registration</div>
+              <div class="step-desc">
+                Create a free app at <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps" target="_blank">portal.azure.com</a>.
+                Set redirect URI to <code style="color:var(--accent2)">[this page URL]</code>.
+                Add <strong>Mail.Read</strong> + <strong>Mail.Send</strong> permissions under "Microsoft Graph → Delegated".
+              </div>
+            </div>
+          </div>
+
+          <label class="setup-label">Azure Client ID</label>
+          <input type="text" id="clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+
+          <div style="margin-top: 10px;">
+            <label class="setup-label">Redirect URI (this page)</label>
+            <input type="text" id="redirectUri" placeholder="https://yourdomain.com/email-ai-assistant.html" />
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Step 2: Claude API -->
+        <div class="setup-section">
+          <div class="step-row">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <div class="step-title">Anthropic API Key</div>
+              <div class="step-desc">Get your key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>. Stored only in memory — never sent anywhere except Anthropic's API.</div>
+            </div>
+          </div>
+          <input type="password" id="anthropicKey" placeholder="sk-ant-..." />
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Step 3: Connect -->
+        <div class="setup-section">
+          <div class="step-row">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <div class="step-title">Connect & Fetch Emails</div>
+              <div class="step-desc">Sign in with Microsoft to authorize inbox access.</div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-full" id="connectBtn" onclick="connectOutlook()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21.35 11.1H12.18V13.83H18.69C18.36 17.64 15.19 19.27 12.19 19.27C8.36 19.27 5 16.25 5 12C5 7.9 8.2 4.73 12.2 4.73C15.29 4.73 17.1 6.7 17.1 6.7L19 4.72C19 4.72 16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12C2.03 17.05 6.16 22 12.25 22C17.6 22 21.5 18.33 21.5 12.91C21.5 11.76 21.35 11.1 21.35 11.1Z"/></svg>
+            Sign in with Microsoft
+          </button>
+          <button class="btn btn-secondary btn-full" id="signOutBtn" onclick="signOut()" style="margin-top:8px;display:none;">Sign Out</button>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Fetch config -->
+        <div class="setup-section">
+          <label class="setup-label">Emails to fetch</label>
+          <select id="fetchCount">
+            <option value="10">Latest 10 emails</option>
+            <option value="25" selected>Latest 25 emails</option>
+            <option value="50">Latest 50 emails</option>
+            <option value="100">Latest 100 emails</option>
+          </select>
+          <div style="margin-top: 10px;">
+            <label class="setup-label">Filter by keyword (optional)</label>
+            <input type="text" id="filterKeyword" placeholder="e.g. invoice, project, report" />
+          </div>
+          <button class="btn btn-secondary btn-full" style="margin-top:10px;" id="fetchBtn" onclick="fetchEmails()" disabled>
+            Fetch Emails
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Pane 2: Email List -->
+    <div class="pane">
+      <div class="pane-header">
+        <div class="pane-title">📬 Inbox</div>
+        <div id="emailCount" style="font-size:11px;color:var(--muted);"></div>
+      </div>
+      <div class="pane-body" id="emailList">
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <div class="empty-text">Connect your Outlook account<br/>and fetch emails to get started</div>
+        </div>
+      </div>
+      <div class="sel-bar" id="selBar" style="display:none;">
+        <div class="sel-bar-text" id="selCount">0 emails selected</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-secondary" onclick="clearSelection()">Clear</button>
+          <button class="btn btn-sm btn-primary" onclick="analyzeAndDraft()" id="draftBtn">
+            Draft with AI →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane 3: AI Draft -->
+    <div class="pane">
+      <div class="pane-header">
+        <div class="pane-title">✦ AI Draft</div>
+      </div>
+      <div class="pane-body">
+
+        <!-- Prompt config -->
+        <div class="draft-field">
+          <label>What should AI do with these emails?</label>
+          <div class="prompt-chip-row">
+            <span class="prompt-chip" onclick="setTemplate('summarize')">Summarize & reply</span>
+            <span class="prompt-chip" onclick="setTemplate('forward')">Forward summary</span>
+            <span class="prompt-chip" onclick="setTemplate('actionitems')">Action items recap</span>
+            <span class="prompt-chip" onclick="setTemplate('report')">Status report</span>
+            <span class="prompt-chip prompt-chip-quote" onclick="setTemplate('clientquote')">✈ Client Quote</span>
+          </div>
+          <textarea id="aiInstruction" style="margin-top:10px;" placeholder="Describe what to do: e.g. 'Read these emails and draft a summary email to my manager listing key requests and deadlines.'" rows="3"></textarea>
+        </div>
+
+        <div id="thinkingIndicator" style="display:none;" class="ai-thinking">
+          <div class="thinking-dots"><span></span><span></span><span></span></div>
+          <span style="font-size:11px;color:var(--accent);">Claude is analyzing your emails...</span>
+        </div>
+
+        <!-- Draft output -->
+        <div id="draftOutput" style="display:none;">
+          <!-- Backend calculations (quote mode) -->
+          <div id="calcPanel" style="display:none; margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--warn);">🧮 Backend Calculations (verify before sending)</span>
+            </div>
+            <textarea id="calcBody" rows="10" style="font-size:11px;background:rgba(245,166,35,0.05);border-color:rgba(245,166,35,0.3);color:var(--warn);opacity:0.85;" readonly></textarea>
+          </div>
+          <hr class="divider" />
+          <div class="draft-field">
+            <label>To</label>
+            <input type="text" id="draftTo" placeholder="recipient@example.com" />
+          </div>
+          <div class="draft-field">
+            <label>Subject</label>
+            <input type="text" id="draftSubject" />
+          </div>
+          <div class="draft-field">
+            <label>Body</label>
+            <textarea id="draftBody" rows="12"></textarea>
+          </div>
+
+          <div class="send-row">
+            <button class="btn btn-success" style="flex:1;" onclick="sendEmail()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+              Send via Outlook
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="copyDraft()">Copy</button>
+          </div>
+
+          <div class="hint" style="margin-top:14px;">
+            <strong>Note:</strong> Review the draft carefully before sending. AI-generated content may need editing.
+          </div>
+        </div>
+
+        <div id="draftEmpty" class="empty-state">
+          <div class="empty-icon">✦</div>
+          <div class="empty-text">Select emails from the inbox,<br/>then click "Draft with AI →"</div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let msalInstance = null;
+let accessToken = null;
+let emails = [];
+let selectedEmails = new Set();
+
+// ─────────────────────────────────────────────
+// MSAL / Outlook
+// ─────────────────────────────────────────────
+function getMsalConfig() {
+  const clientId = document.getElementById('clientId').value.trim();
+  const redirectUri = document.getElementById('redirectUri').value.trim() || window.location.href;
+  return {
+    auth: { clientId, redirectUri, authority: 'https://login.microsoftonline.com/common' },
+    cache: { cacheLocation: 'sessionStorage' }
+  };
+}
+
+async function connectOutlook() {
+  const clientId = document.getElementById('clientId').value.trim();
+  if (!clientId) { showToast('Please enter your Azure Client ID first.', 'error'); return; }
+  try {
+    msalInstance = new msal.PublicClientApplication(getMsalConfig());
+    const result = await msalInstance.loginPopup({
+      scopes: ['Mail.Read', 'Mail.Send', 'User.Read']
+    });
+    accessToken = result.accessToken;
+    setOutlookConnected(result.account.username);
+    showToast('Connected to Outlook!', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Login failed: ' + (e.message || 'unknown error'), 'error');
+  }
+}
+
+function setOutlookConnected(email) {
+  const s = document.getElementById('outlookStatus');
+  s.className = 'status-pill connected';
+  s.innerHTML = `<span class="dot"></span>${email || 'Connected'}`;
+  document.getElementById('connectBtn').style.display = 'none';
+  document.getElementById('signOutBtn').style.display = 'block';
+  document.getElementById('fetchBtn').disabled = false;
+}
+
+function signOut() {
+  if (msalInstance) msalInstance.logoutPopup().catch(() => {});
+  accessToken = null; emails = []; selectedEmails.clear();
+  const s = document.getElementById('outlookStatus');
+  s.className = 'status-pill';
+  s.innerHTML = '<span class="dot"></span>Outlook disconnected';
+  document.getElementById('connectBtn').style.display = 'block';
+  document.getElementById('signOutBtn').style.display = 'none';
+  document.getElementById('fetchBtn').disabled = true;
+  document.getElementById('emailList').innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Connect your Outlook account<br/>and fetch emails to get started</div></div>`;
+  document.getElementById('emailCount').textContent = '';
+  document.getElementById('selBar').style.display = 'none';
+}
+
+async function refreshToken() {
+  try {
+    const accounts = msalInstance.getAllAccounts();
+    if (!accounts.length) throw new Error('No accounts');
+    const result = await msalInstance.acquireTokenSilent({
+      scopes: ['Mail.Read', 'Mail.Send'],
+      account: accounts[0]
+    });
+    accessToken = result.accessToken;
+  } catch (e) {
+    const result = await msalInstance.acquireTokenPopup({ scopes: ['Mail.Read', 'Mail.Send'] });
+    accessToken = result.accessToken;
+  }
+}
+
+async function fetchEmails() {
+  if (!accessToken) { showToast('Please connect first.', 'error'); return; }
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching...';
+  try {
+    await refreshToken();
+    const count = document.getElementById('fetchCount').value;
+    const keyword = document.getElementById('filterKeyword').value.trim();
+    let url = `https://graph.microsoft.com/v1.0/me/messages?$top=${count}&$select=id,subject,from,bodyPreview,receivedDateTime,body&$orderby=receivedDateTime desc`;
+    if (keyword) url += `&$search="${encodeURIComponent(keyword)}"`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    emails = data.value || [];
+    renderEmails();
+    showToast(`Fetched ${emails.length} emails`, 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('Failed to fetch emails: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Fetch Emails';
+  }
+}
+
+function renderEmails() {
+  const list = document.getElementById('emailList');
+  document.getElementById('emailCount').textContent = `${emails.length} emails`;
+  if (!emails.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">No emails found</div></div>`;
+    return;
+  }
+  list.innerHTML = emails.map((e, i) => {
+    const from = e.from?.emailAddress?.name || e.from?.emailAddress?.address || 'Unknown';
+    const date = new Date(e.receivedDateTime).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    return `<div class="email-item" id="email-${i}" onclick="toggleEmail(${i})">
+      <div class="email-from">${escHtml(from)}</div>
+      <div class="email-subject">${escHtml(e.subject || '(no subject)')}</div>
+      <div class="email-preview">${escHtml(e.bodyPreview || '')}</div>
+      <div class="email-meta">
+        <span class="email-date">${date}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleEmail(i) {
+  if (selectedEmails.has(i)) selectedEmails.delete(i);
+  else selectedEmails.add(i);
+  document.getElementById(`email-${i}`).classList.toggle('selected', selectedEmails.has(i));
+  updateSelBar();
+}
+
+function updateSelBar() {
+  const bar = document.getElementById('selBar');
+  if (selectedEmails.size > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('selCount').textContent = `${selectedEmails.size} email${selectedEmails.size > 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearSelection() {
+  selectedEmails.forEach(i => document.getElementById(`email-${i}`)?.classList.remove('selected'));
+  selectedEmails.clear();
+  updateSelBar();
+}
+
+// ─────────────────────────────────────────────
+// Template chips
+// ─────────────────────────────────────────────
+const templates = {
+  summarize: "Read these emails and draft a professional reply that summarizes the key points, acknowledges any requests, and provides a concise response.",
+  forward: "Read these emails and draft a forwarding email to my manager summarizing the key information, open questions, and any action items.",
+  actionitems: "Read these emails and draft a clean action-items recap email listing who needs to do what and by when, formatted clearly.",
+  report: "Read these emails and draft a status update email summarizing project or topic progress, blockers, and next steps.",
+  clientquote: `You are an assistant for a private-jet charter broker. Read the email(s) to extract the client name, trip details (departure/arrival airports, date, one-way or round-trip), and any aircraft options with base prices provided.
+
+BACKEND CALCULATION (perform this first, show all steps clearly before generating the email):
+For each aircraft option:
+1. Start with the base subtotal
+2. Add 7.5% Federal Excise Tax (FET) on the base subtotal
+3. Add $30 segment fee (unless otherwise specified)
+4. Apply 10% markup on the new total (after FET and segment fee)
+5. This gives the FULL total
+6. CLIENT-FACING price = FULL total minus the 7.5% FET amount (FET is hidden from client)
+Round only at the final step using standard rounding rules to two decimal places.
+
+EMAIL FORMAT (after backend calc, generate this clean client-facing email):
+
+Subject: Your Charter Options – [Departure] to [Arrival] | [Date]
+
+Hi [Client Name],
+
+Below are your charter options for the [one-way/round-trip] flight between [Departure Airport] and [Arrival Airport] on [Date]:
+
+[Category Name — e.g. Light Jet]
+[Aircraft Name] – $[xx,xxx.xx]
+
+[Category Name — e.g. Very Light Jets]
+[Aircraft Name] – $[xx,xxx.xx]
+
+[Repeat for all categories in this exact order: 1. Light Jet, 2. Very Light Jets, 3. Super-Midsize Jet, 4. Midsize Jet, 5. Large Cabin — only include categories that apply]
+
+🏆 Why Fly with Valley Jet?
+
+✔ Unmatched Access – Choose from 9,000+ vetted aircraft across all categories: light, midsize, super-midsize, and large cabin jets.
+End-to-End Luxury – Helicopter transfers, gourmet catering, and chauffeured ground transport—all seamlessly arranged.
+Trusted by Clients Nationwide – Our loyal flyers return time and again for our transparency, service, and reliability.
+
+📣 See what they're saying → bit.ly/GoogleReviewVJ
+
+Let me know if you'd like to move forward with any of these options or if you have any questions.
+
+Best regards,
+Valley Jet
+
+IMPORTANT RULES:
+- Do not list or mention any tax, fee, or commission anywhere in the client email
+- Never use the word "commission"
+- Do not include operator names or tail numbers
+- Do not use emoji in category headers
+- Keep formatting clean and suitable for pasting into Apple Mail or email client
+- If any aircraft is quoted from a different airport than the primary departure airport, add a note next to that aircraft (e.g., "PHX instead of SDL") and a brief note below explaining the airport alternative reduces cost if the client is flexible
+- Show only final client-facing prices (FET removed from display, but calculated in backend)
+- The ✔ emoji appears only once, exactly before "Unmatched Access"
+- $30 segment fee applies unless otherwise specified`
+};
+
+function setTemplate(key) {
+  document.querySelectorAll('.prompt-chip').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('aiInstruction').value = templates[key];
+}
+
+// ─────────────────────────────────────────────
+// AI Draft
+// ─────────────────────────────────────────────
+async function analyzeAndDraft() {
+  const apiKey = document.getElementById('anthropicKey').value.trim();
+  if (!apiKey) { showToast('Please enter your Anthropic API key.', 'error'); return; }
+  if (selectedEmails.size === 0) { showToast('Select at least one email.', 'error'); return; }
+  const instruction = document.getElementById('aiInstruction').value.trim() || templates.summarize;
+
+  // Build email content
+  const emailContent = [...selectedEmails].map(i => {
+    const e = emails[i];
+    const from = e.from?.emailAddress?.address || '';
+    const body = e.body?.content || e.bodyPreview || '';
+    const cleanBody = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 2000);
+    return `--- EMAIL ${i+1} ---\nFrom: ${from}\nSubject: ${e.subject}\nDate: ${e.receivedDateTime}\nBody: ${cleanBody}`;
+  }).join('\n\n');
+
+  // Show UI
+  document.getElementById('thinkingIndicator').style.display = 'flex';
+  document.getElementById('draftOutput').style.display = 'none';
+  document.getElementById('draftEmpty').style.display = 'none';
+  document.getElementById('draftBtn').disabled = true;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: `You are an expert email assistant. The user will give you email content and an instruction. 
+You MUST respond with ONLY a valid JSON object in this exact format, no other text:
+{
+  "to": "suggested recipient email if determinable, else empty string",
+  "subject": "email subject line",
+  "body": "ONLY the final client-facing email body, plain text, no HTML. For quote emails, this is ONLY the clean client email — no calculations here.",
+  "calculations": "For quote/pricing emails: show the full step-by-step backend calculation for every aircraft here. For all other email types, leave this as an empty string."
+}`,
+        messages: [{
+          role: 'user',
+          content: `Instruction: ${instruction}\n\n${emailContent}`
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'API error');
+    }
+
+    const data = await response.json();
+    let text = data.content?.[0]?.text || '';
+    // Strip markdown fences
+    text = text.replace(/```json|```/g, '').trim();
+    const draft = JSON.parse(text);
+
+    document.getElementById('draftTo').value = draft.to || '';
+    document.getElementById('draftSubject').value = draft.subject || '';
+    document.getElementById('draftBody').value = draft.body || '';
+
+    // Show backend calculations if present (quote mode)
+    const calcPanel = document.getElementById('calcPanel');
+    if (draft.calculations && draft.calculations.trim()) {
+      document.getElementById('calcBody').value = draft.calculations;
+      calcPanel.style.display = 'block';
+    } else {
+      calcPanel.style.display = 'none';
+    }
+
+    document.getElementById('draftOutput').style.display = 'block';
+    showToast('Draft ready!', 'success');
+  } catch (e) {
+    console.error(e);
+    showToast('AI error: ' + e.message, 'error');
+    document.getElementById('draftEmpty').style.display = 'flex';
+  } finally {
+    document.getElementById('thinkingIndicator').style.display = 'none';
+    document.getElementById('draftBtn').disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Send email
+// ─────────────────────────────────────────────
+async function sendEmail() {
+  if (!accessToken) { showToast('Not connected to Outlook.', 'error'); return; }
+  const to = document.getElementById('draftTo').value.trim();
+  const subject = document.getElementById('draftSubject').value.trim();
+  const body = document.getElementById('draftBody').value.trim();
+  if (!to) { showToast('Please enter a recipient email address.', 'error'); return; }
+
+  const sendBtn = document.querySelector('.btn-success');
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span> Sending...';
+
+  try {
+    await refreshToken();
+    const message = {
+      message: {
+        subject,
+        body: { contentType: 'Text', content: body },
+        toRecipients: to.split(',').map(a => ({ emailAddress: { address: a.trim() } }))
+      }
+    };
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(message)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    showToast('Email sent successfully!', 'success');
+    sendBtn.innerHTML = '✓ Sent!';
+    setTimeout(() => {
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg> Send via Outlook';
+    }, 3000);
+  } catch (e) {
+    console.error(e);
+    showToast('Send failed: ' + e.message, 'error');
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg> Send via Outlook';
+  }
+}
+
+function copyDraft() {
+  const body = document.getElementById('draftBody').value;
+  const subject = document.getElementById('draftSubject').value;
+  navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`).then(() => {
+    showToast('Copied to clipboard!', 'success');
+  });
+}
+
+// ─────────────────────────────────────────────
+// Utils
+// ─────────────────────────────────────────────
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let toastTimer;
+function showToast(msg, type='') {
+  clearTimeout(toastTimer);
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  toastTimer = setTimeout(() => { t.className = ''; }, 3500);
+}
+
+// Pre-fill redirect URI
+window.addEventListener('load', () => {
+  document.getElementById('redirectUri').value = window.location.href.split('?')[0];
+});
+</script>
+</body>
+</html>
